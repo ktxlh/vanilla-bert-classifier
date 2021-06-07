@@ -1,0 +1,85 @@
+[PolitiFact]
+SEED = 123
+transform = 'tanh'
+            batch_size = 32
+            model_name = 'bert-base-cased'
+            num_epochs = 150
+            lr = 0.005
+            momentum = 0.9
+            step_size = 20
+            gamma = 0.5
+            hidden_dropout_prob = 0.15
+==== Best epoch 40 ====
+Accuracy 0.8866
+Fake precision 0.8372
+Fake recall    0.9000
+Fake f1_score  0.8675 
+Real precision 0.9259
+Real recall    0.8772
+Real f1_score  0.9009
+Test loss 0.0173
+
+[Pheme]
+SEED = 123
+transform = 'tanh'
+            batch_size = 32
+            model_name = 'bert-base-cased'
+            num_epochs = 200
+            lr = 0.005
+            momentum = 0.9
+            step_size = 5
+            gamma = 0.5
+            hidden_dropout_prob = 0.1
+==== Best epoch 166 ====
+Accuracy 0.7683
+Fake precision 0.6733
+Fake recall    0.7161
+Fake f1_score  0.6940
+Real precision 0.8291
+Real recall    0.7985
+Real f1_score  0.8135
+Test loss 0.0165
+
+[Pheme: reproduce check]
+SEED = 123
+transform = 'tanh'
+            read_input = read_pheme
+            hidden_dim = 768 + 7
+            batch_size = 32
+            model_name = 'bert-base-cased'
+            num_epochs = 100
+            lr = 0.008
+            momentum = 0.9
+            step_size = 5
+            gamma = 0.9
+            hidden_dropout_prob = 0.1
+==== Best epoch 67 ====
+Accuracy 0.7621
+Fake precision 0.6554
+Fake recall    0.7415
+Fake f1_score  0.6958
+Real precision 0.8378
+Real recall    0.7740
+Real f1_score  0.8046
+Test loss 0.0162
+
+[Buzzfeed]
+SEED = 123
+            hidden_dim = 768 + 29 + 2
+            batch_size = 32
+            model_name = 'bert-base-cased'
+            num_epochs = 300
+            lr = 0.01
+            momentum = 0.9
+            step_size = 20
+            gamma = 0.5
+            hidden_dropout_prob = 0.08
+==== Best epoch 120 ====
+Accuracy 0.9474
+Fake precision 1.0000
+Fake recall    0.8750
+Fake f1_score  0.9333
+Real precision 0.9167
+Real recall    1.0000
+Real f1_score  0.9565
+Test loss 0.0168

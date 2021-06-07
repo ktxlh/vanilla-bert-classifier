@@ -5,21 +5,12 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
 
-from data import read_pheme, read_politifact
+from data import read_pheme, read_politifact, read_buzzfeed
 from metrics import evaluate
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 SEED = 123
 torch.manual_seed(SEED)
-
-batch_size = 32
-model_name = 'bert-base-cased'
-num_epochs = 300
-lr = 0.01
-momentum = 0.9
-step_size = 20
-gamma = 0.5
-hidden_dropout_prob = 0.1
 
 class Head(nn.Module):
     def __init__(self, hidden_dim):
@@ -44,10 +35,8 @@ def exam(data_loader, classifier, criteria, prints):
             preds.extend(torch.max(logits, dim=-1).indices.tolist()) 
     return evaluate(targets, preds, prints), total_loss / len(targets)
 
-def main(name, read_input):
-    hidden_dim = 768 + (7 if name == 'pheme' else 5)
+def main():
     classifier = Head(hidden_dim).to(device)
-    
     optimizer = SGD(classifier.parameters(), lr=lr, momentum=momentum)
     scheduler = StepLR(optimizer, step_size=step_size, gamma=gamma)
     criteria = torch.nn.CrossEntropyLoss()
@@ -82,7 +71,7 @@ def main(name, read_input):
             best_epoch = i_epoch
             torch.save(classifier, f'./models/C-{name}-{i_epoch}')
         
-        if i_epoch % 5 == 0:
+        if i_epoch % 10 == 9:
             print('Epoch {} Train loss {:11.4f} Valid loss {:11.4f} Valid acc {:.4f}'.format(i_epoch, train_loss, valid_loss, result[0]))
     
     # Test
@@ -91,7 +80,41 @@ def main(name, read_input):
     result, test_loss = exam(test_dataloader, classifier.to(device), criteria, prints=True)
     print('Test loss {:.4f}'.format(test_loss))
         
+
 if __name__ == "__main__":
-    for name, read_input in [('politifact', read_politifact), ('pheme', read_pheme)]:
-        main(name, read_input)
-        break ###
+    for name in ['buzzfeed']:  # 'politifact', 'pheme', 'buzzfeed'
+        if name == "politifact":  # Test Acc 0.8557
+            read_input = read_politifact
+            hidden_dim = 768 + 5
+            batch_size = 32
+            model_name = 'bert-base-cased'
+            num_epochs = 150
+            lr = 0.005
+            momentum = 0.9
+            step_size = 20
+            gamma = 0.5
+            hidden_dropout_prob = 0.15
+        if name == "pheme":  # Test Acc 0.7558
+            read_input = read_pheme
+            hidden_dim = 768 + 7
+            batch_size = 32
+            model_name = 'bert-base-cased'
+            num_epochs = 100
+            lr = 0.008
+            momentum = 0.9
+            step_size = 5
+            gamma = 0.9
+            hidden_dropout_prob = 0.1
+        if name == "buzzfeed":
+            read_input = read_buzzfeed
+            hidden_dim = 768 + 29 + 2
+            batch_size = 32
+            model_name = 'bert-base-cased'
+            num_epochs = 300
+            lr = 0.01
+            momentum = 0.9
+            step_size = 20
+            gamma = 0.5
+            hidden_dropout_prob = 0.08
+
+        main()
