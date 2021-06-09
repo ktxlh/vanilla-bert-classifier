@@ -5,7 +5,7 @@ from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from tqdm import trange, tqdm
 
-from data import read_pheme, read_politifact, read_buzzfeed
+from data import read_pheme, read_politifact, read_buzzfeed, read_gossipcop
 from metrics import evaluate
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -18,7 +18,7 @@ class Head(nn.Module):
         self.dropout = nn.Dropout(hidden_dropout_prob)
         self.classifier = nn.Linear(hidden_dim, 2)
     def forward(self, x):
-        h = self.dropout(x)
+        h = self.dropout(x[:, :hidden_dim])
         o = self.classifier(h)
         return o
 
@@ -82,10 +82,10 @@ def main():
         
 
 if __name__ == "__main__":
-    for name in ['buzzfeed']:  # 'politifact', 'pheme', 'buzzfeed'
+    for name in ['gossipcop', 'politifact',]:  # 'politifact', 'pheme', 'buzzfeed', 'gossipcop'
         if name == "politifact":  # Test Acc 0.8557
             read_input = read_politifact
-            hidden_dim = 768 + 5
+            hidden_dim = 768 + 2
             batch_size = 32
             model_name = 'bert-base-cased'
             num_epochs = 150
@@ -94,6 +94,17 @@ if __name__ == "__main__":
             step_size = 20
             gamma = 0.5
             hidden_dropout_prob = 0.15
+        if name == "gossipcop":  # 0.9345
+            read_input = read_gossipcop
+            hidden_dim = 768 + 2
+            batch_size = 32
+            model_name = 'bert-base-cased'
+            num_epochs = 100
+            lr = 0.001
+            momentum = 0.9
+            step_size = 10
+            gamma = 0.9
+            hidden_dropout_prob = 0.1
         if name == "pheme":  # Test Acc 0.7558
             read_input = read_pheme
             hidden_dim = 768 + 7

@@ -4,10 +4,10 @@ Load news titles/text & labels
 import pandas as pd
 import json
 import random
-from os import listdir
+from os import listdir, mkdir
 from os.path import isfile, join, isdir
-from transformers import AutoModel, AutoTokenizer
-
+from transformers import BertModel, BertTokenizerFast
+from collections import Counter
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm, trange
@@ -33,19 +33,19 @@ class NewsDataset(Dataset):
     def __getitem__(self, idx):
         return self.ids[idx], self.features[idx], self.labels[idx]
     
-def try_load_features(in_dir):
-    if isfile(join(in_dir, "features-bert-baseline.npy")) \
-        and isfile(join(in_dir, "labels-bert-baseline.npy")) \
-            and isfile(join(in_dir, "ids-bert-baseline.txt")):
-        features = torch.from_numpy(np.load(join(in_dir, "features-bert-baseline.npy")))
-        labels = torch.from_numpy(np.load(join(in_dir, "labels-bert-baseline.npy")))
-        with open(join(in_dir, "ids-bert-baseline.txt"), 'r') as f:
+def try_load_features(dataset):
+    if isfile(join(f'./data/{dataset}', "features-bert-noskip.npy")) \
+        and isfile(join(f'./data/{dataset}', "labels-bert-noskip.npy")) \
+            and isfile(join(f'./data/{dataset}', "ids-bert-noskip.txt")):
+        features = torch.from_numpy(np.load(join(f'./data/{dataset}', "features-bert-noskip.npy")))
+        labels = torch.from_numpy(np.load(join(f'./data/{dataset}', "labels-bert-noskip.npy")))
+        with open(join(f'./data/{dataset}', "ids-bert-noskip.txt"), 'r') as f:
             ids = [l.strip() for l in f.readlines()]
         return ids, features, labels
     else:
         return None, None, None
 
-def preprocess_and_save(inpt, in_dir, max_seq_len, batch_size=256, model_name='bert-base-cased', transform='tanh'):
+def preprocess_and_save(inpt, dataset, max_seq_len, batch_size=256, model_name='bert-base-cased', transform='tanh'):
     def transform_(inpt):
         f = np.array([i[-1] for i in inpt])
         if transform == "standardize":
@@ -78,13 +78,17 @@ def preprocess_and_save(inpt, in_dir, max_seq_len, batch_size=256, model_name='b
             features = torch.cat(features, dim=0)
         return ids, features, labels
     transform_(inpt)
-    tokenizer = AutoTokenizer.from_pretrained(model_name, model_max_length=max_seq_len)
-    model = AutoModel.from_pretrained(model_name, return_dict=True).to(device)
+    tokenizer = BertTokenizerFast.from_pretrained(model_name, model_max_length=max_seq_len)
+    model = BertModel.from_pretrained(model_name, return_dict=True).to(device)
     random.shuffle(inpt)
     ids, features, labels = detuple_embed(tokenizer, model, max_seq_len, batch_size, inpt)
-    np.save(join(in_dir, "features-bert-baseline.npy"), features.numpy())
-    np.save(join(in_dir, "labels-bert-baseline.npy"), np.array(labels))
-    with open(join(in_dir, "ids-bert-baseline.txt"), 'w') as f:
+    if not isdir(f'./data/{dataset}/'):
+        if not isdir('./data/'):
+            mkdir('./data/')
+        mkdir(f'./data/{dataset}/')
+    np.save(join(f'./data/{dataset}/', "features-bert-noskip.npy"), features.numpy())
+    np.save(join(f'./data/{dataset}/', "labels-bert-noskip.npy"), np.array(labels))
+    with open(join(f'./data/{dataset}/', "ids-bert-noskip.txt"), 'w') as f:
         f.write('\n'.join(ids) + '\n')
     return ids, features, labels
 
@@ -96,33 +100,43 @@ def split_input(ids, features, labels):
     test = NewsDataset(ids[n_valid:], features[n_valid:], labels[n_valid:])
     return train, valid, test
 
-def read_politifact_input(in_dir):
+def read_politifact_input(in_dir, dataset):
     rumorities = {'real': REAL, 'fake': FAKE}
     inpt = []
+    dfs = []
     for rumority, label in rumorities.items():
-        for news_id in tqdm(listdir(join(in_dir, rumority)), desc=f'politifact-{rumority}'):
-            content_fn = join(in_dir, rumority, news_id, 'news content.json')
-            if not isfile(content_fn): continue
-            with open(content_fn, 'r') as f:
-                content = json.load(f)
-            has_image = int(len(content["top_img"]) > 0)
-            num_images = len(content["images"])
-            num_exclam = (content["title"] + content["text"]).count("!")
-            tp = join(in_dir, rumority, news_id, 'tweets')
-            num_tweets = len(listdir(tp)) if isdir(tp) else 0
-            rp = join(in_dir, rumority, news_id, 'retweets')
-            num_retweets = len(listdir(rp)) if isdir(rp) else 0
-            other_features = [has_image, num_images, num_exclam, num_tweets, num_retweets]
-            inpt.append([news_id, content['title'] + " [SEP] " + content["text"], label, other_features])
+        df = pd.read_csv(join(in_dir, f'{dataset}_{rumority}.csv'))
+        df['label'] = label
+        dfs.append(df)
+    df = pd.concat(dfs)
+    df = df.sample(frac=1).reset_index(drop=True)
+    sources =  [str(row.news_url).split('/')[0].replace('www.', '').split('.')[0] for _, row in df.iterrows() if len(str(row.news_url).split('/')) >= 1]
+    ctr = Counter(sources)
+    num_sources = 2
+    sources = [k for k in ctr.keys()][:num_sources-1]  # leave one for "others"
+    source_map = {k: i for i, k in enumerate(sources, start=1)}
+    for _, row in tqdm(df.iterrows(), desc=f'make {dataset} input'):
+        feature = [len(str(row.tweet_ids).split('\t')),]  # len(features) = 10
+        source = [0 for _ in range(len(sources) + 1)]
+        src = [s for s in sources if s in str(row.news_url)]
+        source[source_map[src[0]] if len(src) > 0 else 0] = 1
+        feature.extend(source)
+        inpt.append([row.id, row.title, row.label, feature])
     return inpt
 
-def read_politifact():
-    in_dir = '/rwproject/kdd-db/20-rayw1/FakeNewsNet/code/fakenewsnet_dataset/politifact'
+def read_politifact(dataset='politifact'):
+    if torch.cuda.is_available():
+        in_dir = '/rwproject/kdd-db/20-rayw1/FakeNewsNet/dataset'
+    else:
+        in_dir = '/Users/shanglinghsu/Workspaces/Transformers/data/dataset'
     ids, features, labels = try_load_features(in_dir)
     if labels == None:
-        inpt = read_politifact_input(in_dir)
-        ids, features, labels = preprocess_and_save(inpt, in_dir, max_seq_len=490)
+        inpt = read_politifact_input(in_dir, dataset)
+        ids, features, labels = preprocess_and_save(inpt, dataset, max_seq_len=49)
     return split_input(ids, features, labels)
+
+def read_gossipcop():
+    return read_politifact('gossipcop')
 
 def read_pheme_input(in_dir):
     rumorities = {'non-rumours': REAL, 'rumours': FAKE}
@@ -152,7 +166,7 @@ def read_pheme():
     ids, features, labels = try_load_features(in_dir)
     if labels == None:
         inpt = read_pheme_input(in_dir)
-        ids, features, labels = preprocess_and_save(inpt, in_dir, max_seq_len=49)
+        ids, features, labels = preprocess_and_save(inpt, 'pheme', max_seq_len=49)
     return split_input(ids, features, labels)
 
 def read_buzzfeed_input():
@@ -179,6 +193,6 @@ def read_buzzfeed():
     ids, features, labels = try_load_features(in_dir)
     if labels == None:
         inpt = read_buzzfeed_input()
-        ids, features, labels = preprocess_and_save(inpt, in_dir, max_seq_len=490)
+        ids, features, labels = preprocess_and_save(inpt, 'buzzfeed', max_seq_len=490)
     return split_input(ids, features, labels)
 
